@@ -1,0 +1,13 @@
+node_modules/
+www/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/capacitor-cordova-android-plugins/build/
+*.iml
+.idea/
+
+# Signing key lives in GitHub secrets, never in the repo
+*.jks
+*.keystore

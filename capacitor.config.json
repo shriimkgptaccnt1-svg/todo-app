@@ -1,0 +1,16 @@
+{
+  "appId": "com.shriim.todo",
+  "appName": "todo",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force",
+    "backgroundColor": "#000000"
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#d9480f",
+      "overlaysWebView": false
+    }
+  }
+}

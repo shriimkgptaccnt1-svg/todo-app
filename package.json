@@ -1,0 +1,21 @@
+{
+  "name": "todo-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "todo: short-term and long-term task lists",
+  "scripts": {
+    "build": "node scripts/build-web.js",
+    "sync": "npm run build && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.4.2",
+    "@capacitor/app": "7.0.2",
+    "@capacitor/core": "7.4.2",
+    "@capacitor/status-bar": "7.0.2",
+    "@fontsource/bricolage-grotesque": "5.2.8",
+    "@fontsource/figtree": "5.2.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.4.2"
+  }
+}
