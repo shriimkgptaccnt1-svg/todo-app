@@ -11,6 +11,7 @@
     "@capacitor/android": "7.4.2",
     "@capacitor/app": "7.0.2",
     "@capacitor/core": "7.4.2",
+    "@capacitor/keyboard": "7.0.5",
     "@capacitor/status-bar": "7.0.2",
     "@fontsource/bricolage-grotesque": "5.2.8",
     "@fontsource/figtree": "5.2.8"

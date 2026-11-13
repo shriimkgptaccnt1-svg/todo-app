@@ -53,7 +53,7 @@ body::before {
   z-index: 10;
   background: var(--head);
 }
-.app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.app { height: calc(100% - var(--kb, 0px)); display: grid; grid-template-rows: auto 1fr; }
 
 /* Top bar */
 header { background: var(--head); color: #fff; }
@@ -824,7 +824,12 @@ form.composer button:focus-visible { outline: 2px solid #fff; outline-offset: 2p
     edit = { id: t.id, text: t.text, due: t.due || null, list: t.list };
     render();
     const i = $("edit-text");
-    if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    if (i) {
+      i.focus({ preventScroll: true });
+      i.setSelectionRange(i.value.length, i.value.length);
+      if (plugins.Keyboard) { try { plugins.Keyboard.show(); } catch {} }
+      requestAnimationFrame(() => i.closest(".task").scrollIntoView({ block: "center", behavior: "smooth" }));
+    }
   }
 
   function saveEdit() {
@@ -1091,6 +1096,89 @@ form.composer button:focus-visible { outline: 2px solid #fff; outline-offset: 2p
   let sbTimer = null;
   track.addEventListener("scroll", () => { clearTimeout(sbTimer); sbTimer = setTimeout(syncStatusBar, 80); }, { passive: true });
 
+  // ---------- keyboard ----------
+  // Android 15 draws the keyboard over the app instead of shrinking it, so the app
+  // shrinks itself by however much of the keyboard is still covering it.
+  const Keyboard = plugins.Keyboard;
+  let baseHeight = window.innerHeight;
+  let kbOpen = false;
+  let kbReported = 0;
+
+  function applyKeyboard() {
+    let cover = 0;
+    if (kbOpen) {
+      const shrunk = Math.max(0, baseHeight - window.innerHeight);
+      const vv = window.visualViewport ? Math.max(0, window.innerHeight - window.visualViewport.height) : 0;
+      cover = Math.max(0, kbReported - shrunk, vv);
+    }
+    document.documentElement.style.setProperty("--kb", cover + "px");
+    if (kbOpen) requestAnimationFrame(keepFocusedVisible);
+  }
+  function keepFocusedVisible() {
+    const a = document.activeElement;
+    if (!a) return;
+    if (a.id === "edit-text") {
+      const card = a.closest(".task");
+      if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });
+    } else if (a.closest && a.closest("form.composer")) {
+      const sc = a.closest(".pane").querySelector(".scroller");
+      sc.scrollTop = sc.scrollHeight;
+    }
+  }
+  function typingInput() {
+    const a = document.activeElement;
+    return a && a.tagName === "INPUT" && (a.type === "text" || a.type === "date") ? a : null;
+  }
+  function hideKeyboard() {
+    const a = typingInput();
+    if (a) a.blur();
+    if (Keyboard) { try { Keyboard.hide(); } catch {} }
+  }
+  function openKeyboardFor(list) {
+    const input = $("new-" + list);
+    if (!input || edit || selecting) return;
+    input.focus({ preventScroll: true });
+    if (Keyboard) { try { Keyboard.show(); } catch {} }
+  }
+
+  if (Keyboard) {
+    Keyboard.addListener("keyboardWillShow", (info) => { kbOpen = true; kbReported = (info && info.keyboardHeight) || 0; applyKeyboard(); });
+    Keyboard.addListener("keyboardDidShow", (info) => { kbOpen = true; kbReported = (info && info.keyboardHeight) || kbReported; applyKeyboard(); });
+    Keyboard.addListener("keyboardWillHide", () => { kbOpen = false; applyKeyboard(); });
+    Keyboard.addListener("keyboardDidHide", () => { kbOpen = false; applyKeyboard(); });
+  }
+  // Browsers and phones where the page itself shrinks or the visual viewport reports the keyboard.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => {
+      if (!Keyboard) kbOpen = window.innerHeight - window.visualViewport.height > 80 || baseHeight - window.innerHeight > 80;
+      applyKeyboard();
+    });
+  }
+  window.addEventListener("resize", () => {
+    if (!kbOpen && !typingInput()) baseHeight = window.innerHeight;
+    else if (window.innerHeight > baseHeight) baseHeight = window.innerHeight;
+    applyKeyboard();
+  });
+  document.addEventListener("focusin", () => { if (kbOpen) requestAnimationFrame(keepFocusedVisible); });
+
+  // Tap empty space, tap the top bar, or start scrolling the list: the keyboard closes.
+  document.querySelectorAll(".scroller").forEach(sc => {
+    sc.addEventListener("pointerdown", (e) => {
+      if (!typingInput()) return;
+      if (e.target.closest(".task, button, input, label, .done-item, .chip")) return;
+      hideKeyboard();
+    });
+    let sy = null;
+    sc.addEventListener("touchstart", (e) => { sy = e.touches[0].clientY; }, { passive: true });
+    sc.addEventListener("touchmove", (e) => {
+      if (sy === null || dragging || !typingInput() || document.activeElement.id === "edit-text") return;
+      if (Math.abs(e.touches[0].clientY - sy) > 12) { sy = null; hideKeyboard(); }
+    }, { passive: true });
+  });
+  document.querySelector("header").addEventListener("pointerdown", (e) => {
+    if (typingInput() && !e.target.closest(".tab")) hideKeyboard();
+  });
+
   function start() {
     mode = "local";
     store = localStore;
@@ -1102,15 +1190,22 @@ form.composer button:focus-visible { outline: 2px solid #fff; outline-offset: 2p
       try { plugins.StatusBar.setStyle({ style: "DARK" }); } catch {}
       syncStatusBar();
     }
+    // Open on Short term, ready to type.
+    setTimeout(() => openKeyboardFor("short"), 350);
     if (plugins.App) {
       plugins.App.addListener("backButton", () => {
+        if (kbOpen || typingInput()) { if (edit) { edit = null; render(); } hideKeyboard(); return; }
         if (edit) { edit = null; render(); return; }
         if (selecting) { selecting = false; selected.clear(); renderDone(); return; }
         const cur = currentPane();
         if (cur > 0) { track.scrollTo({ left: (cur - 1) * track.clientWidth, behavior: "smooth" }); return; }
         plugins.App.exitApp();
       });
-      plugins.App.addListener("resume", () => { if (!edit && !dragging) { render(); purgeOld(); } });
+      plugins.App.addListener("resume", () => {
+        if (!edit && !dragging) { render(); purgeOld(); }
+        const cur = currentPane();
+        if (cur < 2) setTimeout(() => openKeyboardFor(lists[cur]), 250);
+      });
     }
   }
   start();
